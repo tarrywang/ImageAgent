@@ -1,0 +1,22 @@
+{
+  "name": "imageagent",
+  "version": "1.0.0",
+  "description": "Web agent to pixelate images into chibi sticker-style bead sprite art via OpenAI GPT 5.1",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "multer": "^2.0.2",
+    "openai": "^6.10.0"
+  }
+}

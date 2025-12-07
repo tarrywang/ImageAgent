@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>悦舍工坊-像素化萌系贴纸生成器</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0d1117;
+        --card: rgba(255, 255, 255, 0.06);
+        --border: rgba(255, 255, 255, 0.12);
+        --accent: #4ade80;
+        --accent-2: #22d3ee;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(circle at 20% 20%, #122135 0, transparent 35%),
+          radial-gradient(circle at 80% 0%, #10241d 0, transparent 40%),
+          var(--bg);
+        color: var(--text);
+        font-family: "Manrope", "Helvetica Neue", Arial, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+
+      .shell {
+        width: min(1100px, 100%);
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        box-shadow: 0 25px 80px rgba(0, 0, 0, 0.35);
+        padding: 24px;
+        backdrop-filter: blur(8px);
+      }
+
+      header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+
+      .title {
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .pill {
+        padding: 6px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      form {
+        border: 1px dashed var(--border);
+        border-radius: 12px;
+        padding: 18px;
+        display: grid;
+        gap: 12px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      label {
+        font-weight: 600;
+      }
+
+      .input-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      input[type="file"] {
+        color: var(--muted);
+      }
+
+      button {
+        border: none;
+        border-radius: 10px;
+        padding: 10px 16px;
+        font-size: 15px;
+        font-weight: 700;
+        color: #081512;
+        cursor: pointer;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        transition: transform 0.1s ease, box-shadow 0.1s ease;
+        box-shadow: 0 10px 30px rgba(34, 211, 238, 0.25);
+      }
+
+      button:active {
+        transform: translateY(1px);
+        box-shadow: 0 4px 16px rgba(34, 211, 238, 0.2);
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .panels {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 14px;
+        margin-top: 16px;
+      }
+
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+        background: var(--card);
+        min-height: 320px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .panel h3 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .preview {
+        flex: 1;
+        border-radius: 10px;
+        border: 1px dashed var(--border);
+        background: rgba(255, 255, 255, 0.03);
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .preview img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .loader {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        border: 3px solid rgba(255, 255, 255, 0.15);
+        border-top-color: var(--accent-2);
+        animation: spin 1s linear infinite;
+        display: none;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (max-width: 700px) {
+        body {
+          padding: 16px;
+        }
+
+        .shell {
+          padding: 18px;
+        }
+
+        .panels {
+          grid-template-columns: 1fr;
+        }
+
+        button {
+          width: 100%;
+        }
+
+        .preview {
+          min-height: 260px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div class="title">悦舍工坊-像素化萌系贴纸生成器</div>
+        <div class="pill">模型：OpenAI GPT 5.1 + gpt-image-1</div>
+      </header>
+
+      <form id="uploadForm">
+        <label for="imageInput">上传一张图片（支持 png/jpg/webp，最大 10MB）</label>
+        <div class="input-row">
+          <input
+            id="imageInput"
+            name="image"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            required
+          />
+          <button type="submit">生成像素风贴纸</button>
+          <div class="loader" id="loader"></div>
+        </div>
+        <div class="status" id="status">提示：使用少量像素网格，保留原始细节与表情。生成时请保持屏幕常亮（iOS 切后台会中断）。</div>
+      </form>
+
+      <div class="panels">
+        <div class="panel">
+          <h3>原始图片</h3>
+          <div class="preview">
+            <img id="originalPreview" alt="原始图片预览" />
+          </div>
+        </div>
+        <div class="panel">
+          <h3>像素化贴纸</h3>
+          <div class="preview">
+            <img id="resultPreview" alt="生成结果预览" />
+          </div>
+          <div class="hint">提示词：像素化 + chibi 贴纸 + 清晰网格，便于串珠。</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById("uploadForm");
+      const input = document.getElementById("imageInput");
+      const originalPreview = document.getElementById("originalPreview");
+      const resultPreview = document.getElementById("resultPreview");
+      const statusEl = document.getElementById("status");
+      const loader = document.getElementById("loader");
+
+      input.addEventListener("change", () => {
+        const file = input.files?.[0];
+        if (file) {
+          originalPreview.src = URL.createObjectURL(file);
+          statusEl.textContent = "已选择图片，点击生成。";
+        }
+      });
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const file = input.files?.[0];
+        if (!file) {
+          statusEl.textContent = "请先选择图片文件。";
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append("image", file);
+
+        loader.style.display = "inline-block";
+          statusEl.textContent = "生成中，请保持屏幕常亮...";
+          resultPreview.src = "";
+
+        try {
+          const resp = await fetch("/api/pixelate", {
+            method: "POST",
+            body: formData,
+          });
+
+          const data = await resp.json();
+          if (!resp.ok) {
+            throw new Error(data.error || "生成失败");
+          }
+
+          resultPreview.src = data.image;
+          statusEl.textContent = "生成完成！如需重新生成，请再次上传。";
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = err.message || "生成失败，请稍后重试。";
+        } finally {
+          loader.style.display = "none";
+        }
+      });
+    </script>
+  </body>
+</html>
