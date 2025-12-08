@@ -148,19 +148,20 @@
       }
 
       .preview {
-        height: 400px;
+        min-height: 500px;
         border-radius: 10px;
         border: 1px dashed var(--border);
         background: rgba(255, 255, 255, 0.03);
-        display: grid;
-        place-items: center;
-        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: auto;
         position: relative;
       }
 
       .preview img {
         max-width: 100%;
-        max-height: 100%;
+        height: auto;
         object-fit: contain;
         display: block;
       }
@@ -206,7 +207,7 @@
         }
 
         .preview {
-          height: 300px;
+          min-height: 300px;
         }
       }
 
