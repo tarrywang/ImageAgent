@@ -126,7 +126,7 @@
 
       .panels {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        grid-template-columns: 1fr 1fr;
         gap: 14px;
         margin-top: 16px;
       }
@@ -136,7 +136,6 @@
         border-radius: 12px;
         padding: 14px;
         background: var(--card);
-        min-height: 320px;
         display: flex;
         flex-direction: column;
         gap: 10px;
@@ -149,7 +148,7 @@
       }
 
       .preview {
-        flex: 1;
+        height: 400px;
         border-radius: 10px;
         border: 1px dashed var(--border);
         background: rgba(255, 255, 255, 0.03);
@@ -187,6 +186,12 @@
         }
       }
 
+      @media (max-width: 900px) {
+        .panels {
+          grid-template-columns: 1fr;
+        }
+      }
+
       @media (max-width: 700px) {
         body {
           padding: 16px;
@@ -196,17 +201,121 @@
           padding: 18px;
         }
 
-        .panels {
-          grid-template-columns: 1fr;
-        }
-
         button {
           width: 100%;
         }
 
         .preview {
-          min-height: 260px;
+          height: 300px;
         }
+      }
+
+      /* 网格信息样式 */
+      .grid-info {
+        margin-top: 8px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .grid-dimensions strong {
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      /* 色彩面板样式 */
+      .color-palette {
+        margin-top: 16px;
+        padding: 16px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+      }
+
+      .color-palette h4 {
+        margin: 0 0 12px 0;
+        font-size: 16px;
+        color: var(--text);
+      }
+
+      .color-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .color-item {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .color-swatch {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        flex-shrink: 0;
+      }
+
+      .color-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .color-code {
+        font-size: 11px;
+        font-family: monospace;
+        color: var(--text);
+        font-weight: 600;
+        line-height: 1;
+      }
+
+      .color-stats {
+        font-size: 9px;
+        color: var(--muted);
+        line-height: 1;
+      }
+
+      /* 交互式提示框样式 */
+      .color-tooltip {
+        position: fixed;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(0, 0, 0, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        padding: 8px 12px;
+        pointer-events: none;
+        z-index: 9999;
+        font-size: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      }
+
+      .tooltip-color {
+        width: 32px;
+        height: 32px;
+        border-radius: 4px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+      }
+
+      .tooltip-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        color: #fff;
+      }
+
+      .tooltip-info strong {
+        font-family: monospace;
+        color: var(--accent);
       }
     </style>
   </head>
@@ -248,6 +357,13 @@
           <div class="hint">提示词：像素化 + chibi 贴纸 + 清晰网格，便于串珠。</div>
         </div>
       </div>
+
+      <!-- 网格信息和色彩面板 -->
+      <div class="grid-info" id="gridInfo" style="display: none;"></div>
+      <div class="color-palette" id="colorPalette" style="display: none;">
+        <h4>色彩方块</h4>
+        <div class="color-grid"></div>
+      </div>
     </div>
 
     <script>
@@ -257,6 +373,300 @@
       const resultPreview = document.getElementById("resultPreview");
       const statusEl = document.getElementById("status");
       const loader = document.getElementById("loader");
+
+      // Canvas for interactive view
+      let imageCanvas = null;
+      let imageContext = null;
+
+      // 1. RGB转十六进制
+      function rgbToHex(r, g, b) {
+        return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+      }
+
+      // 2. 提取颜色（含统计）
+      function extractColors(imageElement) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        canvas.width = imageElement.naturalWidth;
+        canvas.height = imageElement.naturalHeight;
+        ctx.drawImage(imageElement, 0, 0);
+
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const pixels = imageData.data;
+        const totalPixels = canvas.width * canvas.height;
+
+        const colorMap = new Map();
+
+        for (let i = 0; i < pixels.length; i += 4) {
+          const r = pixels[i];
+          const g = pixels[i + 1];
+          const b = pixels[i + 2];
+          const a = pixels[i + 3];
+
+          if (a < 128) continue;
+
+          const hex = rgbToHex(r, g, b);
+          const existing = colorMap.get(hex) || { r, g, b, count: 0 };
+          colorMap.set(hex, { ...existing, count: existing.count + 1 });
+        }
+
+        return Array.from(colorMap.entries())
+          .map(([hex, data]) => ({
+            hex,
+            r: data.r,
+            g: data.g,
+            b: data.b,
+            count: data.count,
+            percentage: ((data.count / totalPixels) * 100).toFixed(2)
+          }))
+          .sort((a, b) => b.count - a.count);
+      }
+
+      // 颜色距离计算（欧几里得距离）
+      function colorDistance(c1, c2) {
+        const dr = c1.r - c2.r;
+        const dg = c1.g - c2.g;
+        const db = c1.b - c2.b;
+        return Math.sqrt(dr * dr + dg * dg + db * db);
+      }
+
+      // 颜色聚类函数，合并相似颜色
+      function clusterColors(colors, threshold = 35) {
+        const clusters = [];
+
+        for (const color of colors) {
+          let nearestCluster = null;
+          let minDistance = Infinity;
+
+          for (const cluster of clusters) {
+            const dist = colorDistance(color, cluster.representative);
+            if (dist < minDistance) {
+              minDistance = dist;
+              nearestCluster = cluster;
+            }
+          }
+
+          if (nearestCluster && minDistance < threshold) {
+            nearestCluster.colors.push(color);
+            nearestCluster.totalCount += color.count;
+            nearestCluster.totalPercentage = parseFloat(nearestCluster.totalPercentage) + parseFloat(color.percentage);
+          } else {
+            clusters.push({
+              representative: color,
+              colors: [color],
+              totalCount: color.count,
+              totalPercentage: parseFloat(color.percentage)
+            });
+          }
+        }
+
+        return clusters.map(cluster => ({
+          hex: cluster.representative.hex,
+          r: cluster.representative.r,
+          g: cluster.representative.g,
+          b: cluster.representative.b,
+          count: cluster.totalCount,
+          percentage: cluster.totalPercentage.toFixed(2),
+          variants: cluster.colors.length
+        })).sort((a, b) => b.count - a.count);
+      }
+
+      // 3. 显示色彩面板
+      function displayColorPalette(colors) {
+        const paletteEl = document.getElementById('colorPalette');
+        const gridEl = paletteEl.querySelector('.color-grid');
+
+        paletteEl.querySelector('h4').textContent = `色彩方块 (共 ${colors.length} 种颜色)`;
+
+        gridEl.innerHTML = colors.map(color => `
+          <div class="color-item">
+            <div class="color-swatch" style="background-color: ${color.hex};"></div>
+            <div class="color-info">
+              <span class="color-code">${color.hex}</span>
+              <span class="color-stats">${color.count}px (${color.percentage}%)</span>
+            </div>
+          </div>
+        `).join('');
+
+        paletteEl.style.display = 'block';
+      }
+
+      // 4. 裁剪白边
+      function cropWhiteBorder(imageElement) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        canvas.width = imageElement.naturalWidth;
+        canvas.height = imageElement.naturalHeight;
+        ctx.drawImage(imageElement, 0, 0);
+
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        const width = canvas.width;
+        const height = canvas.height;
+
+        // 使用饱和度判断，检测高亮度+低饱和度的白色/灰色边框
+        const isWhite = (r, g, b) => {
+          const max = Math.max(r, g, b);
+          const min = Math.min(r, g, b);
+          const saturation = max === 0 ? 0 : (max - min) / max;
+          const brightness = max;
+          return brightness > 240 && saturation < 0.1;
+        };
+
+        let top = 0, bottom = height, left = 0, right = width;
+
+        // 检测上边界
+        for (let y = 0; y < height; y++) {
+          let hasColor = false;
+          for (let x = 0; x < width; x++) {
+            const i = (y * width + x) * 4;
+            if (!isWhite(data[i], data[i+1], data[i+2])) {
+              hasColor = true;
+              break;
+            }
+          }
+          if (hasColor) {
+            top = y;
+            break;
+          }
+        }
+
+        // 检测下边界
+        for (let y = height - 1; y >= 0; y--) {
+          let hasColor = false;
+          for (let x = 0; x < width; x++) {
+            const i = (y * width + x) * 4;
+            if (!isWhite(data[i], data[i+1], data[i+2])) {
+              hasColor = true;
+              break;
+            }
+          }
+          if (hasColor) {
+            bottom = y + 1;
+            break;
+          }
+        }
+
+        // 检测左边界
+        for (let x = 0; x < width; x++) {
+          let hasColor = false;
+          for (let y = 0; y < height; y++) {
+            const i = (y * width + x) * 4;
+            if (!isWhite(data[i], data[i+1], data[i+2])) {
+              hasColor = true;
+              break;
+            }
+          }
+          if (hasColor) {
+            left = x;
+            break;
+          }
+        }
+
+        // 检测右边界
+        for (let x = width - 1; x >= 0; x--) {
+          let hasColor = false;
+          for (let y = 0; y < height; y++) {
+            const i = (y * width + x) * 4;
+            if (!isWhite(data[i], data[i+1], data[i+2])) {
+              hasColor = true;
+              break;
+            }
+          }
+          if (hasColor) {
+            right = x + 1;
+            break;
+          }
+        }
+
+        // 裁剪
+        const croppedCanvas = document.createElement('canvas');
+        croppedCanvas.width = right - left;
+        croppedCanvas.height = bottom - top;
+        const croppedCtx = croppedCanvas.getContext('2d');
+        croppedCtx.drawImage(
+          canvas,
+          left, top, right - left, bottom - top,
+          0, 0, right - left, bottom - top
+        );
+
+        return croppedCanvas.toDataURL('image/png');
+      }
+
+      // 5. 显示网格信息
+      function displayGridInfo() {
+        const gridInfoEl = document.getElementById('gridInfo');
+        gridInfoEl.innerHTML = `
+          <span class="grid-dimensions">网格尺寸: <strong>64 × 64</strong></span>
+        `;
+        gridInfoEl.style.display = 'block';
+      }
+
+      // 6. 初始化交互式查看
+      function initInteractiveView(imageElement) {
+        let tooltip = document.getElementById('colorTooltip');
+        if (!tooltip) {
+          tooltip = document.createElement('div');
+          tooltip.id = 'colorTooltip';
+          tooltip.className = 'color-tooltip';
+          tooltip.style.display = 'none';
+          document.body.appendChild(tooltip);
+        }
+
+        if (!imageCanvas) {
+          imageCanvas = document.createElement('canvas');
+          imageContext = imageCanvas.getContext('2d');
+        }
+
+        imageCanvas.width = imageElement.naturalWidth;
+        imageCanvas.height = imageElement.naturalHeight;
+        imageContext.drawImage(imageElement, 0, 0);
+
+        const handleMove = (e) => {
+          const rect = imageElement.getBoundingClientRect();
+          const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+          const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+          const x = clientX - rect.left;
+          const y = clientY - rect.top;
+
+          const scaleX = imageElement.naturalWidth / rect.width;
+          const scaleY = imageElement.naturalHeight / rect.height;
+          const imgX = Math.floor(x * scaleX);
+          const imgY = Math.floor(y * scaleY);
+
+          if (imgX >= 0 && imgX < imageCanvas.width && imgY >= 0 && imgY < imageCanvas.height) {
+            const pixelData = imageContext.getImageData(imgX, imgY, 1, 1).data;
+            const hex = rgbToHex(pixelData[0], pixelData[1], pixelData[2]);
+
+            const gridSize = imageCanvas.width / 64;
+            const gridX = Math.floor(imgX / gridSize) + 1;
+            const gridY = Math.floor(imgY / gridSize) + 1;
+
+            tooltip.innerHTML = `
+              <div class="tooltip-color" style="background-color: ${hex};"></div>
+              <div class="tooltip-info">
+                <div><strong>${hex}</strong></div>
+                <div>位置: (${gridX}, ${gridY})</div>
+              </div>
+            `;
+            tooltip.style.display = 'flex';
+            tooltip.style.left = `${clientX + 10}px`;
+            tooltip.style.top = `${clientY + 10}px`;
+          }
+        };
+
+        const handleLeave = () => {
+          tooltip.style.display = 'none';
+        };
+
+        imageElement.addEventListener('mousemove', handleMove);
+        imageElement.addEventListener('touchmove', handleMove);
+        imageElement.addEventListener('mouseleave', handleLeave);
+        imageElement.addEventListener('touchend', handleLeave);
+      }
 
       input.addEventListener("change", () => {
         const file = input.files?.[0];
@@ -292,8 +702,29 @@
             throw new Error(data.error || "生成失败");
           }
 
-          resultPreview.src = data.image;
-          statusEl.textContent = "生成完成！如需重新生成，请再次上传。";
+          // 加载原始图片，裁剪白边后应用
+          const croppedImage = new Image();
+          croppedImage.onload = () => {
+            // 裁剪白边
+            resultPreview.src = cropWhiteBorder(croppedImage);
+
+            // 等待裁剪后的图片加载完成
+            resultPreview.onload = () => {
+              // 提取颜色并聚类（合并相似颜色）
+              const colors = extractColors(resultPreview);
+              const clusteredColors = clusterColors(colors, 35);
+              displayColorPalette(clusteredColors);
+
+              // 显示网格信息
+              displayGridInfo();
+
+              // 启用交互式查看
+              initInteractiveView(resultPreview);
+
+              statusEl.textContent = "生成完成！如需重新生成，请再次上传。";
+            };
+          };
+          croppedImage.src = data.image;
         } catch (err) {
           console.error(err);
           statusEl.textContent = err.message || "生成失败，请稍后重试。";
