@@ -45,8 +45,51 @@ app.post("/api/pixelate", upload.single("image"), async (req, res) => {
     return res.status(400).json({ error: "请上传图片文件" });
   }
 
-  const prompt =
-    "Make the image into a chibi sticker set. And convert it into a pixel art style, making sure each grid is clearly visible so I can use it for bead sprites. Try to use as few grids as possible while fully preserving the original design.";
+  const prompt = `Convert the provided image into a professional Mard-style (豆画) cute chibi perler bead pattern.
+
+STYLE REQUIREMENTS:
+
+- Create in the popular "Mard" / "豆画" bead art style
+- Character should be adorable, simplified, chibi-style with large head and cute features
+- Clean, flat colors with no gradients, shadows, or anti-aliasing
+- Simplified color palette (8-15 distinct bead colors maximum)
+- Professional bead pattern format suitable for crafting
+
+GRID REQUIREMENTS (CRITICAL - must follow exactly):
+
+- The artwork MUST be rendered on a true 52 × 52 pixel matrix (52 columns and 52 rows)
+- Each cell = exactly 1 pixel = 1 physical fuse bead
+- Do NOT use coarse grids like 20×20, 22×22, or 30×30
+- The character must be drawn using individual 52×52 pixels, not large blocks
+- Grid lines should be thin, light gray, and clearly visible at every pixel boundary
+
+LAYOUT REQUIREMENTS:
+
+- White or light gray background
+- Coordinate labels on all four sides (top, bottom, left, right): 1-52
+- Grid lines align to every single pixel boundary of the 52×52 matrix
+- Keep edges crisp and clean (no blur, no anti-aliasing)
+
+COLOR REQUIREMENTS:
+
+- Use simplified, distinct colors that represent real perler bead colors
+- Limit palette to 8-15 colors for easy crafting
+- Each color should be clearly distinguishable from others
+- Avoid subtle color variations - use bold, solid colors
+
+CHARACTER DESIGN:
+
+- Cute chibi proportions (large head, small body)
+- Simple, friendly facial features
+- Clean outlines and shapes
+- Centered in the 52×52 grid
+- Appropriate size to show detail while fitting the grid
+
+IMPORTANT - VERIFICATION:
+
+If the result is not exactly 52×52 distinct cells, it is WRONG.
+Do not reduce grid resolution or merge pixels into larger blocks.
+The final output must be a ready-to-use bead pattern reference sheet in Mard/豆画 style.`;
 
   try {
     // 使用 images/edits 端点，multipart/form-data 格式

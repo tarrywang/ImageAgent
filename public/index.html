@@ -596,11 +596,420 @@
         return croppedCanvas.toDataURL('image/png');
       }
 
+      // 4.5 将图片重采样为精确的52×52网格
+      function resampleTo52x52(imageElement, gridSize = 52) {
+        const srcCanvas = document.createElement('canvas');
+        const srcCtx = srcCanvas.getContext('2d');
+
+        srcCanvas.width = imageElement.naturalWidth;
+        srcCanvas.height = imageElement.naturalHeight;
+        srcCtx.drawImage(imageElement, 0, 0);
+
+        const srcData = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
+        const srcPixels = srcData.data;
+        const srcWidth = srcCanvas.width;
+        const srcHeight = srcCanvas.height;
+
+        // 计算每个网格单元的大小
+        const cellWidth = srcWidth / gridSize;
+        const cellHeight = srcHeight / gridSize;
+
+        // 创建目标画布（每个网格单元10像素，便于显示）
+        const cellDisplaySize = 10;
+        const dstCanvas = document.createElement('canvas');
+        const dstCtx = dstCanvas.getContext('2d');
+        dstCanvas.width = gridSize * cellDisplaySize;
+        dstCanvas.height = gridSize * cellDisplaySize;
+
+        // 存储52×52网格的颜色数据
+        const gridColors = [];
+
+        // 遍历每个网格单元
+        for (let gy = 0; gy < gridSize; gy++) {
+          const row = [];
+          for (let gx = 0; gx < gridSize; gx++) {
+            // 计算该单元格在源图像中的区域
+            const startX = Math.floor(gx * cellWidth);
+            const startY = Math.floor(gy * cellHeight);
+            const endX = Math.floor((gx + 1) * cellWidth);
+            const endY = Math.floor((gy + 1) * cellHeight);
+
+            // 统计该区域内的颜色
+            const colorCounts = new Map();
+            let totalR = 0, totalG = 0, totalB = 0, count = 0;
+
+            for (let y = startY; y < endY && y < srcHeight; y++) {
+              for (let x = startX; x < endX && x < srcWidth; x++) {
+                const i = (y * srcWidth + x) * 4;
+                const r = srcPixels[i];
+                const g = srcPixels[i + 1];
+                const b = srcPixels[i + 2];
+                const a = srcPixels[i + 3];
+
+                if (a > 128) {
+                  totalR += r;
+                  totalG += g;
+                  totalB += b;
+                  count++;
+
+                  // 量化颜色用于众数统计（减少颜色变体）
+                  const qr = Math.round(r / 16) * 16;
+                  const qg = Math.round(g / 16) * 16;
+                  const qb = Math.round(b / 16) * 16;
+                  const key = `${qr},${qg},${qb}`;
+                  colorCounts.set(key, (colorCounts.get(key) || 0) + 1);
+                }
+              }
+            }
+
+            let finalR, finalG, finalB;
+
+            if (count === 0) {
+              // 透明/白色区域
+              finalR = finalG = finalB = 255;
+            } else {
+              // 使用众数颜色（出现最多的颜色）
+              let maxCount = 0;
+              let dominantColor = null;
+              for (const [key, c] of colorCounts) {
+                if (c > maxCount) {
+                  maxCount = c;
+                  dominantColor = key;
+                }
+              }
+
+              if (dominantColor) {
+                const [qr, qg, qb] = dominantColor.split(',').map(Number);
+                // 使用量化颜色的平均值来获得更准确的颜色
+                finalR = Math.round(totalR / count);
+                finalG = Math.round(totalG / count);
+                finalB = Math.round(totalB / count);
+              } else {
+                finalR = Math.round(totalR / count);
+                finalG = Math.round(totalG / count);
+                finalB = Math.round(totalB / count);
+              }
+            }
+
+            row.push({ r: finalR, g: finalG, b: finalB });
+
+            // 绘制到目标画布
+            dstCtx.fillStyle = `rgb(${finalR}, ${finalG}, ${finalB})`;
+            dstCtx.fillRect(gx * cellDisplaySize, gy * cellDisplaySize, cellDisplaySize, cellDisplaySize);
+          }
+          gridColors.push(row);
+        }
+
+        // 绘制网格线
+        dstCtx.strokeStyle = 'rgba(128, 128, 128, 0.5)';
+        dstCtx.lineWidth = 1;
+        for (let i = 0; i <= gridSize; i++) {
+          // 垂直线
+          dstCtx.beginPath();
+          dstCtx.moveTo(i * cellDisplaySize, 0);
+          dstCtx.lineTo(i * cellDisplaySize, gridSize * cellDisplaySize);
+          dstCtx.stroke();
+          // 水平线
+          dstCtx.beginPath();
+          dstCtx.moveTo(0, i * cellDisplaySize);
+          dstCtx.lineTo(gridSize * cellDisplaySize, i * cellDisplaySize);
+          dstCtx.stroke();
+        }
+
+        return {
+          dataUrl: dstCanvas.toDataURL('image/png'),
+          gridColors: gridColors,
+          gridSize: gridSize
+        };
+      }
+
+      // 4.6 创建带颜色代码的拼豆图（Mard/豆画格式）
+      function createBeadPattern(gridColors, gridSize = 52) {
+        const cellSize = 22;  // 每个格子的像素大小（需要容纳文字）
+        const labelSize = 24; // 坐标标签的宽度
+        const titleHeight = 35; // 顶部标题区域高度
+        const legendHeight = 80; // 底部图例高度
+        const gridWidth = gridSize * cellSize + labelSize * 2; // 左右都有坐标
+        const gridHeight = gridSize * cellSize + labelSize * 2; // 上下都有坐标
+
+        // 步骤1: 收集所有唯一颜色
+        const colorMap = new Map();
+        for (const row of gridColors) {
+          for (const color of row) {
+            const key = `${color.r},${color.g},${color.b}`;
+            if (!colorMap.has(key)) {
+              colorMap.set(key, { r: color.r, g: color.g, b: color.b, count: 0 });
+            }
+            colorMap.get(key).count++;
+          }
+        }
+
+        // 步骤2: 合并相似颜色（激进聚类）
+        const allColors = Array.from(colorMap.entries()).map(([key, data]) => ({
+          key,
+          ...data
+        }));
+
+        // 颜色距离计算（加权RGB，对人眼感知更准确）
+        function colorDist(c1, c2) {
+          const rmean = (c1.r + c2.r) / 2;
+          const dr = c1.r - c2.r;
+          const dg = c1.g - c2.g;
+          const db = c1.b - c2.b;
+          return Math.sqrt((2 + rmean/256) * dr*dr + 4 * dg*dg + (2 + (255-rmean)/256) * db*db);
+        }
+
+        // 激进聚类：合并相似颜色（阈值60，更激进）
+        const clusterThreshold = 60;
+        const colorClusters = [];
+        const whiteCluster = {
+          center: { r: 255, g: 255, b: 255, isWhite: true },
+          colors: [],
+          totalCount: 0
+        };
+
+        for (const color of allColors) {
+          // 白色/近白色加入白色聚类
+          if (color.r > 245 && color.g > 245 && color.b > 245) {
+            whiteCluster.colors.push(color);
+            whiteCluster.totalCount += color.count;
+            continue;
+          }
+
+          // 找到最近的聚类
+          let bestCluster = null;
+          let bestDist = Infinity;
+
+          for (const cluster of colorClusters) {
+            const dist = colorDist(color, cluster.center);
+            if (dist < bestDist) {
+              bestDist = dist;
+              bestCluster = cluster;
+            }
+          }
+
+          if (bestCluster && bestDist < clusterThreshold) {
+            // 加入现有聚类
+            bestCluster.colors.push(color);
+            bestCluster.totalCount += color.count;
+            // 更新聚类中心（加权平均）
+            const totalWeight = bestCluster.colors.reduce((sum, c) => sum + c.count, 0);
+            bestCluster.center.r = Math.round(bestCluster.colors.reduce((sum, c) => sum + c.r * c.count, 0) / totalWeight);
+            bestCluster.center.g = Math.round(bestCluster.colors.reduce((sum, c) => sum + c.g * c.count, 0) / totalWeight);
+            bestCluster.center.b = Math.round(bestCluster.colors.reduce((sum, c) => sum + c.b * c.count, 0) / totalWeight);
+          } else {
+            // 创建新聚类
+            const newCluster = {
+              center: { r: color.r, g: color.g, b: color.b },
+              colors: [color],
+              totalCount: color.count
+            };
+            colorClusters.push(newCluster);
+          }
+        }
+
+        // 如果有白色，添加到最后
+        if (whiteCluster.totalCount > 0) {
+          colorClusters.push(whiteCluster);
+        }
+
+        // 步骤3: 按使用数量排序聚类
+        colorClusters.sort((a, b) => b.totalCount - a.totalCount);
+
+        // 计算总格子数（用于标题显示）
+        const totalCells = gridSize * gridSize;
+
+        // 步骤4: 生成清晰的颜色代码（Mard格式：H2, A9, G5等）
+        const colorCodes = new Map();
+        const letters = 'HAGCFBDEJKLMNPQRSTUVWXYZ'; // H,A,G,C,F开头优先
+        let letterIdx = 0;
+        let numIdx = 2;
+
+        for (const cluster of colorClusters) {
+          const center = cluster.center;
+
+          // 白色不显示代码
+          if (center.isWhite) {
+            const whiteData = { code: '', r: 255, g: 255, b: 255, count: cluster.totalCount };
+            // 所有白色映射到同一个
+            for (const color of cluster.colors) {
+              colorCodes.set(color.key, whiteData);
+            }
+            continue;
+          }
+
+          // 生成代码
+          const code = `${letters[letterIdx]}${numIdx}`;
+          const codeData = {
+            code,
+            r: center.r,
+            g: center.g,
+            b: center.b,
+            count: cluster.totalCount
+          };
+
+          // 将聚类中所有颜色映射到同一个代码
+          for (const color of cluster.colors) {
+            colorCodes.set(color.key, codeData);
+          }
+
+          numIdx++;
+          if (numIdx > 28) {
+            numIdx = 2;
+            letterIdx++;
+            if (letterIdx >= letters.length) letterIdx = 0;
+          }
+        }
+
+        // 创建网格代码矩阵
+        const gridCodes = gridColors.map(row =>
+          row.map(color => {
+            const key = `${color.r},${color.g},${color.b}`;
+            const codeData = colorCodes.get(key);
+            if (!codeData) {
+              // 如果找不到，使用原色并分配临时代码
+              console.warn("颜色未聚类:", color);
+              return { code: '', r: color.r, g: color.g, b: color.b, count: 1 };
+            }
+            return codeData;
+          })
+        );
+
+        // 获取非白色颜色列表用于图例（去重）
+        const uniqueLegendColors = new Map();
+        for (const cluster of colorClusters) {
+          if (!cluster.center.isWhite && cluster.colors.length > 0) {
+            // 使用第一个颜色的key来获取codeData
+            const firstColor = cluster.colors[0];
+            const codeData = colorCodes.get(firstColor.key);
+            if (codeData && codeData.code) {
+              uniqueLegendColors.set(codeData.code, codeData);
+            }
+          }
+        }
+        const legendColors = Array.from(uniqueLegendColors.values())
+          .sort((a, b) => b.count - a.count);
+
+        // 计算图例需要的行数
+        const legendItemWidth = 70;
+        const legendItemsPerRow = Math.floor(gridWidth / legendItemWidth);
+        const legendRows = Math.ceil(legendColors.length / legendItemsPerRow);
+        const actualLegendHeight = Math.max(legendHeight, legendRows * 28 + 20);
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = gridWidth;
+        canvas.height = titleHeight + gridHeight + actualLegendHeight;
+
+        // 白色背景
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 绘制顶部标题（Mard格式）
+        ctx.fillStyle = '#333333';
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(`豆画 / Mard (${totalCells})`, 10, 8);
+
+        // 绘制颜色网格和代码
+        ctx.font = 'bold 9px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        for (let gy = 0; gy < gridSize; gy++) {
+          for (let gx = 0; gx < gridSize; gx++) {
+            const colorData = gridCodes[gy][gx];
+            const x = labelSize + gx * cellSize;
+            const y = titleHeight + labelSize + gy * cellSize;
+
+            // 填充颜色
+            ctx.fillStyle = `rgb(${colorData.r}, ${colorData.g}, ${colorData.b})`;
+            ctx.fillRect(x, y, cellSize, cellSize);
+
+            // 绘制颜色代码文字
+            if (colorData.code) {
+              // 根据背景亮度选择文字颜色
+              const brightness = (colorData.r * 299 + colorData.g * 587 + colorData.b * 114) / 1000;
+              ctx.fillStyle = brightness > 128 ? '#333333' : '#ffffff';
+              ctx.fillText(colorData.code, x + cellSize / 2, y + cellSize / 2);
+            }
+          }
+        }
+
+        // 绘制网格线
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.lineWidth = 0.5;
+        for (let i = 0; i <= gridSize; i++) {
+          // 垂直线
+          ctx.beginPath();
+          ctx.moveTo(labelSize + i * cellSize, titleHeight + labelSize);
+          ctx.lineTo(labelSize + i * cellSize, titleHeight + labelSize + gridSize * cellSize);
+          ctx.stroke();
+          // 水平线
+          ctx.beginPath();
+          ctx.moveTo(labelSize, titleHeight + labelSize + i * cellSize);
+          ctx.lineTo(labelSize + gridSize * cellSize, titleHeight + labelSize + i * cellSize);
+          ctx.stroke();
+        }
+
+        // 绘制坐标标签
+        ctx.fillStyle = '#333333';
+        ctx.font = 'bold 10px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // 顶部和底部标签 (1-52)
+        for (let i = 0; i < gridSize; i++) {
+          const label = String(i + 1);
+          const x = labelSize + i * cellSize + cellSize / 2;
+          // 顶部
+          ctx.fillText(label, x, titleHeight + labelSize / 2);
+          // 底部
+          ctx.fillText(label, x, titleHeight + labelSize + gridSize * cellSize + labelSize / 2);
+        }
+
+        // 左侧和右侧标签 (1-52)
+        for (let i = 0; i < gridSize; i++) {
+          const label = String(i + 1);
+          const y = titleHeight + labelSize + i * cellSize + cellSize / 2;
+          // 左侧
+          ctx.fillText(label, labelSize / 2, y);
+          // 右侧
+          ctx.fillText(label, labelSize + gridSize * cellSize + labelSize / 2, y);
+        }
+
+        // 绘制底部图例
+        const legendY = titleHeight + gridHeight + 10;
+        ctx.font = 'bold 11px Arial';
+
+        legendColors.forEach((colorData, idx) => {
+          const row = Math.floor(idx / legendItemsPerRow);
+          const col = idx % legendItemsPerRow;
+          const x = 10 + col * legendItemWidth;
+          const y = legendY + row * 26;
+
+          // 颜色方块
+          ctx.fillStyle = `rgb(${colorData.r}, ${colorData.g}, ${colorData.b})`;
+          ctx.fillRect(x, y, 18, 18);
+          ctx.strokeStyle = '#999';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x, y, 18, 18);
+
+          // 颜色代码和数量
+          ctx.fillStyle = '#333333';
+          ctx.textAlign = 'left';
+          ctx.fillText(`${colorData.code} (${colorData.count})`, x + 22, y + 10);
+        });
+
+        return canvas.toDataURL('image/png');
+      }
+
       // 5. 显示网格信息
       function displayGridInfo() {
         const gridInfoEl = document.getElementById('gridInfo');
         gridInfoEl.innerHTML = `
-          <span class="grid-dimensions">网格尺寸: <strong>64 × 64</strong></span>
+          <span class="grid-dimensions">网格尺寸: <strong>52 × 52</strong></span>
         `;
         gridInfoEl.style.display = 'block';
       }
@@ -642,7 +1051,7 @@
             const pixelData = imageContext.getImageData(imgX, imgY, 1, 1).data;
             const hex = rgbToHex(pixelData[0], pixelData[1], pixelData[2]);
 
-            const gridSize = imageCanvas.width / 64;
+            const gridSize = imageCanvas.width / 52;
             const gridX = Math.floor(imgX / gridSize) + 1;
             const gridY = Math.floor(imgY / gridSize) + 1;
 
@@ -699,31 +1108,91 @@
           });
 
           const data = await resp.json();
+          console.log("API response:", data);
+
           if (!resp.ok) {
             throw new Error(data.error || "生成失败");
           }
 
+          if (!data.image) {
+            throw new Error("API 未返回图片数据");
+          }
+
           // 加载原始图片，裁剪白边后应用
           const croppedImage = new Image();
+          croppedImage.onerror = (e) => {
+            console.error("图片加载失败:", e);
+            statusEl.textContent = "图片加载失败，请重试";
+            loader.style.display = "none";
+          };
           croppedImage.onload = () => {
+            console.log("图片加载成功，开始处理...");
             // 裁剪白边
-            resultPreview.src = cropWhiteBorder(croppedImage);
+            const croppedDataUrl = cropWhiteBorder(croppedImage);
 
-            // 等待裁剪后的图片加载完成
-            resultPreview.onload = () => {
-              // 提取颜色并聚类（合并相似颜色）
-              const colors = extractColors(resultPreview);
-              const clusteredColors = clusterColors(colors, 35);
-              displayColorPalette(clusteredColors);
-
-              // 显示网格信息
-              displayGridInfo();
-
-              // 启用交互式查看
-              initInteractiveView(resultPreview);
-
-              statusEl.textContent = "生成完成！如需重新生成，请再次上传。";
+            // 加载裁剪后的图片进行52×52网格量化
+            const croppedImg = new Image();
+            croppedImg.onerror = (e) => {
+              console.error("裁剪后图片加载失败:", e);
+              statusEl.textContent = "图片处理失败，请重试";
+              loader.style.display = "none";
             };
+            croppedImg.onload = () => {
+              try {
+                console.log("裁剪完成，开始52×52网格化...");
+                // 重采样为精确的52×52网格
+                const { gridColors } = resampleTo52x52(croppedImg, 52);
+                console.log("网格化完成，生成拼豆图...");
+
+                // 创建带坐标轴的拼豆图
+                const beadPatternDataUrl = createBeadPattern(gridColors, 52);
+                console.log("拼豆图生成完成，设置预览...");
+                resultPreview.src = beadPatternDataUrl;
+              } catch (err) {
+                console.error("图片处理错误:", err);
+                statusEl.textContent = "图片处理失败: " + err.message;
+                loader.style.display = "none";
+              }
+
+              // 等待最终图片加载完成
+              resultPreview.onload = () => {
+                // 从网格颜色数据提取颜色统计
+                const colorMap = new Map();
+                let totalCells = 0;
+                for (const row of gridColors) {
+                  for (const color of row) {
+                    const hex = rgbToHex(color.r, color.g, color.b);
+                    const existing = colorMap.get(hex) || { r: color.r, g: color.g, b: color.b, count: 0 };
+                    colorMap.set(hex, { ...existing, count: existing.count + 1 });
+                    totalCells++;
+                  }
+                }
+
+                const colors = Array.from(colorMap.entries())
+                  .map(([hex, data]) => ({
+                    hex,
+                    r: data.r,
+                    g: data.g,
+                    b: data.b,
+                    count: data.count,
+                    percentage: ((data.count / totalCells) * 100).toFixed(2)
+                  }))
+                  .sort((a, b) => b.count - a.count);
+
+                // 聚类合并相似颜色
+                const clusteredColors = clusterColors(colors, 35);
+                displayColorPalette(clusteredColors);
+
+                // 显示网格信息
+                displayGridInfo();
+
+                // 启用交互式查看
+                initInteractiveView(resultPreview);
+
+                statusEl.textContent = "生成完成！精确52×52拼豆图已生成。";
+              };
+            };
+            croppedImg.src = croppedDataUrl;
           };
           croppedImage.src = data.image;
         } catch (err) {
